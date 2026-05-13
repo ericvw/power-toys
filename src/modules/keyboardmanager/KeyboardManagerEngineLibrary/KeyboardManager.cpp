@@ -112,6 +112,21 @@ LRESULT CALLBACK KeyboardManager::HookProc(int nCode, const WPARAM wParam, const
         event.wParam = wParam;
         event.lParam->vkCode = Helpers::EncodeKeyNumpadOrigin(event.lParam->vkCode, event.lParam->flags & LLKHF_EXTENDED);
 
+        // Correct Caps Lock toggle state after returning from Secure Desktop or any other context where the hook was inactive.
+        // Runs on non-CapsLock keydown events so it doesn't double-correct with the post-suppression fix below.
+        if ((event.wParam == WM_KEYDOWN || event.wParam == WM_SYSKEYDOWN) &&
+            !(event.lParam->dwExtraInfo & CommonSharedConstants::KEYBOARDMANAGER_INJECTED_FLAG) &&
+            event.lParam->vkCode != VK_CAPITAL &&
+            !keyboardManagerObjectPtr->loadingSettings)
+        {
+            if ((keyboardManagerObjectPtr->state.singleKeyReMap.count(VK_CAPITAL) > 0 ||
+                 keyboardManagerObjectPtr->state.singleKeyToTextReMap.count(VK_CAPITAL) > 0) &&
+                (GetKeyState(VK_CAPITAL) & 1))
+            {
+                KeyboardEventHandlers::SetCapsLockToPreviousState(keyboardManagerObjectPtr->inputHandler);
+            }
+        }
+
         if (keyboardManagerObjectPtr->HandleKeyboardHookEvent(&event) == 1)
         {
             // Reset Num Lock whenever a NumLock key down event is suppressed since Num Lock key state change occurs before it is intercepted by low level hooks
@@ -119,6 +134,13 @@ LRESULT CALLBACK KeyboardManager::HookProc(int nCode, const WPARAM wParam, const
             {
                 KeyboardEventHandlers::SetNumLockToPreviousState(keyboardManagerObjectPtr->inputHandler);
             }
+
+            // Reset Caps Lock whenever a CapsLock key down event is suppressed since Caps Lock key state change occurs before it is intercepted by low level hooks
+            if (event.lParam->vkCode == VK_CAPITAL && (event.wParam == WM_KEYDOWN || event.wParam == WM_SYSKEYDOWN) && event.lParam->dwExtraInfo != KeyboardManagerConstants::KEYBOARDMANAGER_SUPPRESS_FLAG)
+            {
+                KeyboardEventHandlers::SetCapsLockToPreviousState(keyboardManagerObjectPtr->inputHandler);
+            }
+
             return 1;
         }
     }
